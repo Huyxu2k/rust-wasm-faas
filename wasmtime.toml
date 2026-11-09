@@ -1,0 +1,19 @@
+# Config for Wasmtime Engine
+[engine]
+# Bật tính năng tối ưu hóa mã máy khi biên dịch module Wasm (giúp tăng tốc độ thực thi)
+cranelift_opt_level = "speed"
+# Bật cơ chế ngắt bằng Epoch (Epoch Interruption) để chống vòng lặp vô tận (DoS)
+# Host sẽ định kỳ tăng bộ đếm epoch, nếu Wasm chạy quá thời gian sẽ bị ngắt an toàn.
+epoch_interruption = true
+
+[pooling-allocator]
+# Số lượng instance tối đa có thể được cấp phát sẵn trong pool (phục vụ multi-tenant)
+total_component_instances = 1000
+# Giới hạn bộ nhớ tối đa cho mỗi instance trong pool (ví dụ: 64MB cho mỗi tenant)
+max_memory_size = 1024 # 1024 * 64KB = 64 MB
+
+# Cấu hình bảo mật và sandbox
+[profiler]
+# Hình thức profiling (nếu cần debug hiệu năng trên production)
+# Đặt là "none" để đạt hiệu năng tối ưu nhất
+kind = "none"

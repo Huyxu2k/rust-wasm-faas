@@ -24,7 +24,8 @@ wasmtime-wasi = "50.0.1"
 
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 
+thiserror = "2"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json"] }
+tracing-subscriber = { version = "0.3", features = ["json","env-filter"] }
 
 prometheus = "0.14.0"
