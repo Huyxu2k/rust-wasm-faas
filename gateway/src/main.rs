@@ -111,6 +111,11 @@ async fn main() -> Result<()> {
         runtime: runtime_manager
     };
 
+    // 6. Khởi tạo - chạy server
+    let addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    println!("[System Config]: Gateway lắng nghe tại {addr}");
+    axum::serve(listener, router::build_router(state.into())).await?;
     // TODO use LOG
 
     Ok(())
