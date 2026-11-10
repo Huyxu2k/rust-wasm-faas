@@ -1,4 +1,4 @@
 /target
 .env
 */storage
-.lock
+Cargo.lock
