@@ -8,7 +8,7 @@ pub struct TenantMetadata {
     pub tenant_id: String,
     pub wasm_path: String,
     pub data_dir: String,
-    pub memory_limit_bytes: u64
+    pub memory_limit_bytes: i64
 }
 
 #[derive(Clone)]

@@ -6,16 +6,20 @@ edition = "2024"
 [dependencies]
 tokio.workspace = true
 axum.workspace = true
+moka.workspace = true
 
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
+wasmtime-wasi-http.workspace = true
+bytes.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
 
 rusqlite.workspace = true
-uuids.workspace = true
+uuid.workspace = true
 
 thiserror.workspace = true
+anyhow.workspace = true
 tracing.workspace = true
 dotenvy.workspace = true
