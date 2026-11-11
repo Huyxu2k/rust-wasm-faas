@@ -23,7 +23,7 @@ impl DatabaseManager {
         // Tạo bảng tenants nếu chưa có
         conn.execute(
             "CREATE TABLE IF NOT EXISTS tenants(
-                    tenant_id TEXT UNIQUE NOT NULL,
+                    tenant_id TEXT PRIMARY KEY,
                     wasm_path TEXT NOT NULL,
                     data_dir TEXT NOT NULL,
                     memory_limit_bytes INTEGER NOT NULL,
