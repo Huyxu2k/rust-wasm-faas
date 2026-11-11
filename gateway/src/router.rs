@@ -45,6 +45,11 @@ async fn invoke(State(state): State<Arc<AppState>>, Path(params): Path<HashMap<S
 } 
 
 async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Response> {
+    // 0. tenant_id không đúng định dạng UUID loại
+    if uuid::Uuid::parse_str(tenant_id).is_err() {
+        return Err(AppError::NotFound("Tenant không tồn tại"));
+    }
+    
     // 1. Tra metadata + lấy ProxyPre đã compile
     let meta = state
         .db
@@ -56,7 +61,8 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
     // 2. Store mới cho request
     let mut store = Store::new(&state.runtime.engine, TenantState::new(&meta));
     store.limiter(|s| &mut s.limits);
-    store.set_epoch_deadline(epoch_ticks());
+    store.set_epoch_deadline(1); // Mỗi tick (10ms) guest nhường luồng cho task khác
+    store.epoch_deadline_async_yield_and_update(1);
 
     // 3. Chuyển request axum thành resource wasi:http
     let req = rewrite_uri(req, tenant_id)?;
@@ -75,17 +81,24 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
         .await
         .map_err(map_wasm_err)?;
 
-    // 5. Chạy hander
+    // 5. Chạy hander + xử lý giới hạn thời gian chạy
     let tenant = tenant_id.to_owned();
     let task = tokio::spawn(async move {
         let res = proxy
             .wasi_http_incoming_handler()
-            .call_handle(&mut store, wasi_req, out)
-            .await;
-        if let Err(e) = &res {
-            tracing::warn!(tenant = % tenant, error = %format!("{e:#}"), "guest hander lỗi");
+            .call_handle(&mut store, wasi_req, out);
+        
+        match tokio::time::timeout(REQUEST_TIMEOUT, res).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => {
+                tracing::warn!(tenant = %tenant, error = %format!("{e:#}"), "guest handler lỗi");
+                Err(map_wasm_err(e))
+            },
+            Err(_) => {
+                tracing::warn!(tenant = %tenant, "guest chạy quá {REQUEST_TIMEOUT:?} → huỷ");
+                Err(AppError::Timeout)
+            },
         }
-        res
     });
 
     // 6. Chờ guest gọi response-outparam.set
@@ -94,7 +107,7 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
         Ok(Err(code)) => Err(AppError::Guest(format!("{code:?}"))),
         Err(_) => match task.await {
             Ok(Ok(())) => Err(AppError::Guest("Guest không trả response".into())),
-            Ok(Err(e)) => Err(map_wasm_err(e)),
+            Ok(Err(e)) => Err(e),
             Err(join) => Err(AppError::Internal(join.into())),
         },
     }
