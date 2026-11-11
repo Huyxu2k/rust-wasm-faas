@@ -1,8 +1,8 @@
 [workspace]
 members = [
     "gateway",
-    "tenants/sample1"
-]
+    "tenants/service-test1"
+    ]
 resolver = "2"
 
 [workspace.package]

@@ -11,4 +11,9 @@
 - 3. Thêm mục tiêu biên dịch Wasm vào Rust toolchain của bạn
 ```
     rustup target add wasm32-wasip2
+    cargo install wasmtime-cli 
+```
+- 4. Run tenant service
+```
+wasmtime serve --addr 127.0.0.1:3000 -Scli -Shttp target/wasm32-wasip2/release/yourname.wasm
 ```
