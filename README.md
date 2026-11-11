@@ -13,9 +13,11 @@
     rustup target add wasm32-wasip2
     cargo install wasmtime-cli 
 ```
-- ##### 4. Run test tenant service
+- ##### 4. Build & Run test tenant service
 For example
 ```
+cargo build --target wasm32-wasip2 --release
+
 wasmtime serve --addr 127.0.0.1:3000 -Scli -Shttp target/wasm32-wasip2/release/yourname.wasm
 ```
 - ##### 5. Upload file wasm 
