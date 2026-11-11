@@ -31,6 +31,8 @@ const EPOCH_TICK: Duration = Duration::from_millis(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// Giới hạn kích thước file wasm khi upload
 const MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
+/// Thời gian đợi giải phóng comile khỏi ram
+const IDLE_TIMEOUT: u64 = 5 * 60;
 
 pub type Result<T> = std::result::Result<T, AppError>;
 

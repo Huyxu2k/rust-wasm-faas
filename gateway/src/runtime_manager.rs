@@ -1,12 +1,21 @@
 use std::{sync::Arc, time::Duration};
 
-use moka::future::Cache;
+use moka::{future::Cache, notification::RemovalCause};
 use wasmtime::{
     Config, Engine, InstanceAllocationStrategy, OptLevel, PoolingAllocationConfig, ProfilingStrategy, component::{Component, Linker},
 };
 use wasmtime_wasi_http::p2::bindings::ProxyPre;
 
-use crate::{EPOCH_TICK, Result, TenantState, db::TenantMetadata, error::AppError};
+use crate::{EPOCH_TICK, IDLE_TIMEOUT, Result, TenantState, db::TenantMetadata, error::AppError};
+
+#[derive(Clone)]
+pub struct CompiledTenant {
+    pre: ProxyPre<TenantState>,
+    // Kích thước file gốc
+    pub wasm_bytes: usize,
+    // Kính thước mã máy sau khi compile
+    pub compiled_bytes: usize
+}
 
 #[derive(Clone)]
 pub struct TenantRuntime {
@@ -21,10 +30,26 @@ impl TenantRuntime {
         let linker = Arc::new(build_linker(&engine)?);
         let compiled= Cache::builder()
                     .max_capacity(500)
-                    .time_to_idle(Duration::from_secs(15*60))
+                    .time_to_idle(Duration::from_secs(IDLE_TIMEOUT))
+                    .eviction_listener(|tenant_id: Arc<String>, _pre, cause: RemovalCause|{
+                        match cause {
+                            RemovalCause::Expired => tracing::info!(tenant_id = %tenant_id,"Giải phóng bản compile khỏi RAM"),
+                            RemovalCause::Explicit => tracing::info!(tenant_id = %tenant_id,"Tenant upload bản wasm mới"),
+                            RemovalCause::Replaced => tracing::debug!(tenant_id = %tenant_id,"Bản compile được thay thế"),
+                            RemovalCause::Size => tracing::info!(tenant_id = %tenant_id,"Cache đầy → loại tenant ít dùng khỏi RAM"),
+                        }
+                    })
                     .build();
-        Ok(TenantRuntime { engine, linker, compiled })
+        let maintenance = compiled.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                tick.tick().await;
+                maintenance.run_pending_tasks().await;
+            }
+        });
 
+        Ok(TenantRuntime { engine, linker, compiled })
     }
 
     pub async fn proxy_pre(&self, meta: &TenantMetadata) -> Result<ProxyPre<TenantState>>{

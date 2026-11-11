@@ -83,7 +83,7 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
             .call_handle(&mut store, wasi_req, out)
             .await;
         if let Err(e) = &res {
-            tracing::warn!(tenant = % tenant, error = %format!("e:#"), "guest hander lỗi");
+            tracing::warn!(tenant = % tenant, error = %format!("{e:#}"), "guest hander lỗi");
         }
         res
     });

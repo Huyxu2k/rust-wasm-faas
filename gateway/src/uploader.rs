@@ -54,7 +54,7 @@ pub async fn upload_tenant_service(
     let wasm_path = state.root.registry.join(format!("{tenant_id}.wasm"));
     write_atomic(&wasm_path, &wasm).await?;
 
-    // 4. Cập nhật dữ liệu theo tenant_id
+    // 5. Cập nhật dữ liệu theo tenant_id
     let db_path = state.root.tenants.join(format!("{tenant_id}.db"));
     state.db.upsert_tenant(
         &tenant_id,
