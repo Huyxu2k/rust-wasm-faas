@@ -1,5 +1,6 @@
 mod db;
 mod error;
+mod logging;
 mod router;
 mod runtime_manager;
 mod uploader;
@@ -13,6 +14,7 @@ use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 use crate::error::AppError;
 use crate::db::{DatabaseManager, TenantMetadata};
+use crate::logging::init_logging;
 use crate::runtime_manager::TenantRuntime;
 
 /// Thư mục mặc định lưu trữ file .wasm
@@ -88,6 +90,9 @@ impl WasiHttpView for TenantState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // 0. Khởi tạo subscriber 
+    init_logging();
+
     // 1. Đọc biến môi trường
     dotenvy::dotenv().ok();
     let storage_dir_str = env::var("STORAGE_DIR")?;
@@ -112,11 +117,12 @@ async fn main() -> Result<()> {
     };
 
     // 6. Khởi tạo - chạy server
-    let addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    println!("[System Config]: Gateway lắng nghe tại {addr}");
-    axum::serve(listener, router::build_router(state.into())).await?;
-    // TODO use LOG
 
+    tracing::info!("[System]: Gateway lắng nghe tại {addr}");
+    tracing::info!("[System]: Health http://{addr}/health");
+
+    axum::serve(listener, router::build_router(state.into())).await?;
     Ok(())
 }
