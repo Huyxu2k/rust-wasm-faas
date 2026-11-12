@@ -35,3 +35,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json","env-filter"] }
 
 prometheus = "0.14.0"
+
+
+[profile.release]
+opt-level = "s"     # tối ưu kích thước file
+lto = true          # gộp và tối ưu xuyên crate, file nhỏ hơn
+strip = true        # bỏ thông tin debug
+codegen-units = 1   # tối ưu tốt hơn, build chậm hơn một chút
+panic = "abort"     # bỏ code xử lý unwind, file nhỏ hơn
