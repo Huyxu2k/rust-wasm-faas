@@ -51,15 +51,10 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
     }
     
     // 1. Tra metadata + lấy ProxyPre đã compile
-    let meta = state
-        .db
-        .get_tenant(tenant_id)
-        .await?
-        .ok_or(AppError::NotFound("Tenant không tồn tại"))?;
-    let pre = state.runtime.proxy_pre(&meta).await?;
+    let tenant = state.runtime.get(&tenant_id, &state.db).await?;
 
     // 2. Store mới cho request
-    let mut store = Store::new(&state.runtime.engine, TenantState::new(&meta));
+    let mut store = Store::new(&state.runtime.engine, TenantState::new(&tenant.meta));
     store.limiter(|s| &mut s.limits);
     store.set_epoch_deadline(1); // Mỗi tick (10ms) guest nhường luồng cho task khác
     store.epoch_deadline_async_yield_and_update(1);
@@ -76,7 +71,7 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
     let out = store.data_mut().http().new_response_outparam(tx)?;
 
     // 4. Instantiate
-    let proxy = pre
+    let proxy = tenant.pre
         .instantiate_async(&mut store)
         .await
         .map_err(map_wasm_err)?;

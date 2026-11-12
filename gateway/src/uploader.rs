@@ -53,6 +53,8 @@ pub async fn upload_tenant_service(
     // TODO thêm backup
     let wasm_path = state.root.registry.join(format!("{tenant_id}.wasm"));
     write_atomic(&wasm_path, &wasm).await?;
+    // Xóa file cache .cwasm
+    let _ = tokio::fs::remove_file(wasm_path.with_extension("cwasm")).await;
 
     // 5. Cập nhật dữ liệu theo tenant_id
     let db_path = state.root.tenants.join(format!("{tenant_id}.db"));
