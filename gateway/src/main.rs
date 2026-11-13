@@ -98,6 +98,7 @@ async fn main() -> Result<()> {
     // 1. Đọc biến môi trường
     dotenvy::dotenv().ok();
     let storage_dir_str = env::var("STORAGE_DIR")?;
+    tracing::info!("[System]: Đường dẫn thư mục gốc: {}", &storage_dir_str);
     let storage_root = PathBuf::from(storage_dir_str);
 
     // 2. Khởi tạo các thư mục con trong storage nếu chưa tồn tại
@@ -106,6 +107,9 @@ async fn main() -> Result<()> {
     let metadata_path = storage_root.join(METADATA_NAME);
     tokio::fs::create_dir_all(&registry_path).await?;
     tokio::fs::create_dir_all(&tenants_path).await?;
+    tracing::info!("[System]: Đường dẫn lưu file .wasm: {}", &registry_path.display());
+    tracing::info!("[System]: Đường dẫn lưu database: {}", &tenants_path.display());
+    tracing::info!("[System]: Đường dẫn metadata: {}", &metadata_path.display());
     let app_path = AppPath { registry: registry_path, tenants: tenants_path, metadata: metadata_path.clone() };
     // 3. Metadata 
     let db_manager = DatabaseManager::new(&metadata_path)?;

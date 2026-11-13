@@ -37,10 +37,10 @@ impl TenantRuntime {
                     .eviction_listener(|tenant_id: Arc<String>, v: CompiledTenant, cause: RemovalCause|{
                         let mb = v.compiled_bytes as f64 / 1024.0 / 1024.0;
                         match cause {
-                            RemovalCause::Expired => tracing::info!(tenant_id = %tenant_id,"Giải phóng {mb:.2} MB khỏi RAM"),
-                            RemovalCause::Explicit => tracing::info!(tenant_id = %tenant_id,"Tenant upload bản wasm mới"),
-                            RemovalCause::Replaced => tracing::debug!(tenant_id = %tenant_id,"Bản compile được thay thế"),
-                            RemovalCause::Size => tracing::info!(tenant_id = %tenant_id,"Cache đầy → loại tenant, giải phóng {mb:.2} MB"),
+                            RemovalCause::Expired => tracing::info!(tenant_id = %tenant_id,"[Runtime]: Giải phóng {mb:.2} MB khỏi RAM"),
+                            RemovalCause::Explicit => tracing::info!(tenant_id = %tenant_id,"[Runtime]: Tenant upload bản wasm mới"),
+                            RemovalCause::Replaced => tracing::debug!(tenant_id = %tenant_id,"[Runtime]: Bản compile được thay thế"),
+                            RemovalCause::Size => tracing::info!(tenant_id = %tenant_id,"[Runtime]: Cache đầy → loại tenant, giải phóng {mb:.2} MB"),
                         }
                     })
                     .build();
@@ -67,6 +67,7 @@ impl TenantRuntime {
 
         self.compiled
             .try_get_with(tenant_id.to_owned(), async move {
+                tracing::warn!("[Runtime]: Cache miss");
                 // Tra metadata + lấy ProxyPre đã compile
                 let meta = db
                     .get_tenant(&id)
@@ -102,7 +103,7 @@ impl TenantRuntime {
                 match unsafe { Component::deserialize_file(&engine, &cwasm_path) } {
                     Ok(c) => return Ok((c, true)),
                     // Thường do đã nâng cấp wasmtime hoặc đổi Config → compile lại
-                    Err(e) => tracing::warn!(error = %e, "Không dùng được .cwasm → compile lại"),
+                    Err(e) => tracing::warn!(error = %e, "[Runtime]: Không dùng được .cwasm → compile lại"),
                 }
             }
             let bytes = std::fs::read(&wasm_path)?;
@@ -123,7 +124,7 @@ impl TenantRuntime {
             tenant_id = %id,
             ms = started.elapsed().as_millis() as u64,
             source = if from_cache { "cwasm" } else { "compile" },
-            "Nạp tenant vào RAM"
+            "[Runtime]: Nạp tenant vào RAM"
         );
         Ok(component)
     }

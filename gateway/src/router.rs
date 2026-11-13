@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use axum::{
     Router, body::Body, extract::{DefaultBodyLimit, Path, Request, State}, http::{Uri, header::HOST}, response::{IntoResponse, Response}, routing::{any, get, post, put},
@@ -45,6 +45,9 @@ async fn invoke(State(state): State<Arc<AppState>>, Path(params): Path<HashMap<S
 } 
 
 async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Response> {
+    let started = Instant::now();
+    let req_method = req.method().clone();
+    let req_uri = req.uri().clone();
     // 0. tenant_id không đúng định dạng UUID loại
     if uuid::Uuid::parse_str(tenant_id).is_err() {
         return Err(AppError::NotFound("Tenant không tồn tại"));
@@ -98,7 +101,14 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
 
     // 6. Chờ guest gọi response-outparam.set
     match rx.await {
-        Ok(Ok(resp)) => Ok(resp.map(Body::new)),
+        Ok(Ok(resp)) => {
+            tracing::info!(
+                method = %req_method, 
+                uri = %req_uri, 
+                ms = started.elapsed().as_millis() as u64,
+                "[Router]: Đã nhận request");
+            Ok(resp.map(Body::new))
+        },
         Ok(Err(code)) => Err(AppError::Guest(format!("{code:?}"))),
         Err(_) => match task.await {
             Ok(Ok(())) => Err(AppError::Guest("Guest không trả response".into())),
