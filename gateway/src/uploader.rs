@@ -10,7 +10,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::{ AppState, DEFAULT_MEMORY_LIMIT, Result};
+use crate::{ AppState, Result};
 
 pub async fn upload_tenant_service(
     State(state): State<Arc<AppState>>,
@@ -62,24 +62,22 @@ pub async fn upload_tenant_service(
         &tenant_id,
         &wasm_path.to_string_lossy(),
         &db_path.to_string_lossy(),
-        DEFAULT_MEMORY_LIMIT
+        wasm.len() as i64
     ).await?;
 
-    // Clean cache
+    // 6. Clean cache
     state.runtime.invalidate(&tenant_id).await;
 
     let status = if is_new { StatusCode::CREATED } else { StatusCode::OK };
-
-    //LOG
 
     Ok((
         status,
         Json(
             json!({
-            "status": "success",
-            "tenant_id": tenant_id,
-            "message": format!("Tenant [{tenant_id}] xử lý Wasm service thành công!")
-        })
+                "status": "success",
+                "tenant_id": tenant_id,
+                "message": format!("Tenant [{tenant_id}] xử lý Wasm service thành công!")
+            })
         ),
     ))
 }

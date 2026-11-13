@@ -24,7 +24,7 @@ const TENANTS_NAME: &str = "tenants";
 /// File data mặc định
 const METADATA_NAME: &str = "metadata.db";
 /// Giới hạn dung lượng mặc định
-const DEFAULT_MEMORY_LIMIT: i64 = 64 * 1024 * 1024;
+const DEFAULT_MEMORY_LIMIT: usize = 64 * 1024 * 1024;
 /// Chu kỳ tăng epoch của Engine.
 const EPOCH_TICK: Duration = Duration::from_millis(10);
 /// Thời gian tối đa một request được chạy trong Wasm.
@@ -65,7 +65,7 @@ impl TenantState {
             http: WasiHttpCtx::new(), 
             table: ResourceTable::new(), 
             limits: StoreLimitsBuilder::new()
-                    .memory_size(meta.memory_limit_bytes as usize)
+                    .memory_size(DEFAULT_MEMORY_LIMIT)
                     .build() 
         }
     }
