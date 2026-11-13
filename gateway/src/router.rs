@@ -93,7 +93,7 @@ async fn run_guest(state: &AppState, tenant_id: &str, req: Request) -> Result<Re
                 Err(map_wasm_err(e))
             },
             Err(_) => {
-                tracing::warn!(tenant = %tenant, "guest chạy quá {REQUEST_TIMEOUT:?} → huỷ");
+                tracing::warn!(tenant = %tenant, "[Router]: Guest chạy quá {REQUEST_TIMEOUT:?} → huỷ");
                 Err(AppError::Timeout)
             },
         }
