@@ -8,7 +8,7 @@ mod uploader;
 use std::time::Duration;
 use std::{env, path::PathBuf};
 
-use wasmtime::{Linker, StoreLimits, StoreLimitsBuilder};
+use wasmtime::{StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, result, sync::Arc, time::Instant};
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     Router, body::Body, extract::{DefaultBodyLimit, Path, Request, State}, http::{Uri, header::HOST}, response::{IntoResponse, Response}, routing::{any, get, post, put},
@@ -8,7 +8,7 @@ use wasmtime::{Store, Trap};
 use wasmtime_wasi_http::{WasiHttpView, p2::bindings::http::types::Scheme};
 
 use crate::{
-    AppState, EPOCH_TICK, MAX_UPLOAD_BYTES, REQUEST_TIMEOUT, Result, TenantState, error::AppError,
+    AppState, MAX_UPLOAD_BYTES, REQUEST_TIMEOUT, Result, TenantState, error::AppError,
     uploader::upload_tenant_service,
 };
 
@@ -137,10 +137,6 @@ fn rewrite_uri(mut req: Request, tenant_id: &str) -> Result<Request> {
         .map_err(|_| AppError::BadRequest("URI không hợp lệ"))?;
 
     Ok(req)
-}
-
-fn epoch_ticks() -> u64 {
-    (REQUEST_TIMEOUT.as_millis() / EPOCH_TICK.as_millis()).max(1) as u64
 }
 
 fn map_wasm_err(e: wasmtime::Error) -> AppError {

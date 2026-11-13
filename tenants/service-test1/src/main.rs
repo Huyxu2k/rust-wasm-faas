@@ -9,7 +9,7 @@ async fn main(req: Request<Body>) -> Result<Response<Body>> {
         "/" => text(StatusCode::OK,"Hello từ Wasm service test 1!\n"),
         p if p.starts_with("/hello/") => {
             let name = &p["/hello/".len()..];
-            text(StatusCode::OK, format!("Xin chào: {}!\n", &p["/hello/".len()..]))
+            text(StatusCode::OK, format!("Xin chào: {}!\n", name))
         }
         _ => text(StatusCode::NOT_FOUND, "Không tìm thấy\n")
     }
