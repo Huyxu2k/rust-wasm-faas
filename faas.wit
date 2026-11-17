@@ -1,0 +1,410 @@
+// =============================================================================
+//  FILE WIT TỔNG HỢP — GIẢI THÍCH TỪNG PHẦN, CÔNG DỤNG, CÁCH DÙNG
+// =============================================================================
+//
+//  WIT (WebAssembly Interface Type) là ngôn ngữ mô tả "hợp đồng" (contract)
+//  giữa HOST (vd: gateway Rust + Wasmtime) và GUEST (component .wasm do tenant
+//  viết). WIT KHÔNG chứa logic — chỉ khai báo kiểu dữ liệu và chữ ký hàm.
+//  Từ file này, công cụ sinh code (wit-bindgen, wasmtime::component::bindgen!)
+//  sẽ sinh ra trait/struct Rust cho cả 2 phía.
+//
+//  Ví dụ xuyên suốt: nền tảng FaaS đa tenant
+//    - Host cung cấp (IMPORT cho guest): log, config, key-value store, gọi HTTP ra ngoài
+//    - Guest cung cấp (EXPORT cho host): hàm `handle` xử lý request
+//
+//  Cấu trúc thư mục khuyến nghị:
+//      my-project/
+//      └── wit/
+//          ├── faas.wit          <- file này
+//          └── deps/             <- WIT của package khác (vd: wasi-http), nếu dùng
+//
+//  Kiểm tra cú pháp:
+//      cargo install wasm-tools
+//      wasm-tools component wit wit/            # parse + in lại toàn bộ package
+//
+//  Quy ước đặt tên trong WIT:
+//    - Tên dùng kebab-case: `tenant-id`, `max-body-size` (KHÔNG dùng snake_case/camelCase)
+//      -> Rust sinh ra: TenantId, max_body_size ...
+//    - Nếu tên trùng từ khoá (list, type, result, string...) thì thêm `%` đằng trước:
+//      `%type: string`
+//    - `//`  = comment thường (bị bỏ qua)
+//    - `///` = doc comment (được giữ lại và chép vào code sinh ra thành /// trong Rust)
+// =============================================================================
+
+
+// -----------------------------------------------------------------------------
+// 1. KHAI BÁO PACKAGE
+// -----------------------------------------------------------------------------
+//  Cú pháp: package <namespace>:<tên>@<semver>;
+//  - Bắt buộc, đặt ở đầu file, MỖI package chỉ khai báo 1 lần (các file .wit
+//    khác trong cùng thư mục thuộc cùng package thì không cần lặp lại, hoặc
+//    lặp lại y hệt).
+//  - Version tuỳ chọn nhưng nên có: cho phép host phân biệt guest build theo
+//    hợp đồng cũ/mới và cho phép dùng @since bên dưới.
+//  - Package khác tham chiếu tới đây bằng: `use faas:platform/types@0.1.0.{...}`
+package faas:platform@0.1.0;
+
+
+// -----------------------------------------------------------------------------
+// 2. INTERFACE `types` — NƠI GOM CÁC KIỂU DÙNG CHUNG
+// -----------------------------------------------------------------------------
+//  `interface` = một nhóm có tên gồm kiểu + hàm. Đây là đơn vị để import/export.
+//  Mẹo: tách riêng 1 interface chỉ chứa kiểu, các interface khác `use` lại,
+//  tránh khai báo trùng lặp.
+/// Các kiểu dữ liệu dùng chung cho toàn bộ nền tảng.
+interface types {
+
+    // ---- 2.1 KIỂU NGUYÊN THUỶ (primitive) có sẵn -----------------------------
+    //   bool
+    //   s8 s16 s32 s64      (số nguyên có dấu)   -> Rust: i8..i64
+    //   u8 u16 u32 u64      (số nguyên không dấu) -> Rust: u8..u64
+    //   f32 f64             (số thực)
+    //   char                (1 Unicode scalar)
+    //   string              (UTF-8)              -> Rust: String / &str
+    //
+    // ---- 2.2 KIỂU GỘP (generic) có sẵn --------------------------------------
+    //   list<T>             -> Vec<T>   (list<u8> -> Vec<u8>, dùng cho bytes)
+    //   option<T>           -> Option<T>
+    //   result<T, E>        -> Result<T, E>
+    //   result<_, E>        -> Result<(), E>   (không có giá trị khi OK)
+    //   result<T>           -> Result<T, ()>   (lỗi không kèm dữ liệu)
+    //   result              -> Result<(), ()>
+    //   tuple<A, B, ...>    -> (A, B, ...)
+
+    // ---- 2.3 TYPE ALIAS: đặt tên khác cho 1 kiểu ------------------------------
+    //  Công dụng: code dễ đọc, đổi kiểu nền ở 1 chỗ. Không tạo kiểu mới.
+    /// ID tenant (vd: "acme-corp").
+    type tenant-id = string;
+    /// Mốc thời gian, đơn vị mili-giây kể từ Unix epoch.
+    type timestamp-ms = u64;
+    /// Danh sách header HTTP dạng (tên, giá trị). Dùng list thay vì map vì
+    /// WIT không có kiểu map, và header được phép trùng tên.
+    type headers = list<tuple<string, string>>;
+
+    // ---- 2.4 ENUM: tập giá trị cố định, KHÔNG mang dữ liệu -------------------
+    //  -> Rust: enum Method { Get, Post, ... }
+    /// Phương thức HTTP.
+    enum method {
+        get,
+        post,
+        put,
+        delete,
+        patch,
+        head,
+        options,
+    }
+
+    /// Mức độ log.
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+
+    // ---- 2.5 RECORD: struct có các trường được đặt tên -----------------------
+    //  -> Rust: pub struct Request { pub method: Method, ... }
+    //  Record được truyền BẰNG GIÁ TRỊ (copy qua ranh giới host/guest).
+    //  Payload lớn -> cân nhắc dùng resource/stream thay vì list<u8> to.
+    /// Request mà gateway chuyển vào function.
+    record request {
+        method: method,
+        /// Đường dẫn, vd "/users/42?x=1".
+        path: string,
+        headers: headers,
+        /// Body; `none` nếu request không có body.
+        body: option<list<u8>>,
+        /// Thông tin ngữ cảnh do gateway gắn vào.
+        context: request-context,
+    }
+
+    /// Ngữ cảnh thực thi do host cung cấp (guest chỉ đọc).
+    record request-context {
+        tenant: tenant-id,
+        request-id: string,
+        received-at: timestamp-ms,
+        /// Thời gian còn lại trước khi bị huỷ (deadline).
+        deadline-ms: u32,
+    }
+
+    /// Response mà function trả về cho gateway.
+    record response {
+        status: u16,
+        headers: headers,
+        body: list<u8>,
+    }
+
+    // ---- 2.6 VARIANT: enum MANG DỮ LIỆU (tagged union) -----------------------
+    //  -> Rust: enum FaasError { NotFound, InvalidInput(String), ... }
+    //  Mỗi case có thể có 0 hoặc 1 payload (muốn nhiều giá trị thì dùng record/tuple).
+    //  Rất hay dùng làm kiểu lỗi E trong result<T, E>.
+    /// Lỗi chung của nền tảng.
+    variant faas-error {
+        /// Không tìm thấy tài nguyên.
+        not-found,
+        /// Input sai; kèm thông điệp mô tả.
+        invalid-input(string),
+        /// Vượt quota; kèm số giây nên chờ trước khi thử lại.
+        rate-limited(u32),
+        /// Tenant không có quyền với capability này.
+        permission-denied,
+        /// Lỗi khác; kèm thông điệp.
+        internal(string),
+    }
+
+    // ---- 2.7 FLAGS: tập bit, bật/tắt nhiều cờ cùng lúc -----------------------
+    //  -> Rust (wit-bindgen): bitflags  Permissions::KV_READ | Permissions::KV_WRITE
+    //  Khác enum: enum chọn ĐÚNG 1 giá trị; flags chọn 0..N giá trị.
+    /// Quyền host cấp cho từng tenant.
+    flags permissions {
+        kv-read,
+        kv-write,
+        outbound-http,
+        read-config,
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// 3. INTERFACE CHỈ CÓ HÀM — dùng `use` để mượn kiểu
+// -----------------------------------------------------------------------------
+//  `use <interface>.{a, b as c};` đem kiểu từ interface khác vào.
+//  - Cùng package: `use types.{...}`
+//  - Package khác: `use wasi:clocks/wall-clock@0.2.0.{datetime}`
+//  Hàm: `tên: func(tham-số: kiểu, ...) -> kiểu-trả-về;`
+/// Ghi log (host import cho guest). Host sẽ tự gắn tenant/request-id.
+interface logging {
+    use types.{log-level};
+
+    /// Ghi 1 dòng log.
+    log: func(level: log-level, message: string);
+}
+
+/// Đọc cấu hình theo tenant (biến môi trường, secret...).
+interface config {
+    use types.{faas-error};
+
+    /// Lấy 1 giá trị; `none` nếu key không tồn tại.
+    get: func(key: string) -> option<string>;
+
+    /// Lấy toàn bộ cấu hình. Lỗi nếu tenant không có quyền `read-config`.
+    get-all: func() -> result<list<tuple<string, string>>, faas-error>;
+}
+
+
+// -----------------------------------------------------------------------------
+// 4. RESOURCE — đối tượng có danh tính, sống bên HOST, guest chỉ cầm "handle"
+// -----------------------------------------------------------------------------
+//  Công dụng: thứ không nên/không thể copy qua ranh giới: kết nối DB, file,
+//  store, stream... Guest nhận một handle (số nguyên ẩn), host giữ dữ liệu
+//  thật trong ResourceTable. Khi guest drop handle -> host được gọi để dọn.
+//
+//  Các loại hàm trong resource:
+//    constructor(...)              -> tạo mới:   Store::new(...)
+//    tên: func(...)                -> method, ngầm có `self` (borrow<store>)
+//    tên: static func(...)         -> hàm tĩnh, không có self
+//
+//  Sở hữu (ownership) khi truyền resource làm tham số / kết quả:
+//    store          = own<store>    -> chuyển quyền sở hữu (bên nhận phải drop)
+//    borrow<store>  = mượn tạm      -> chỉ hợp lệ trong lúc gọi hàm
+/// Key-value store cô lập theo tenant.
+interface kv {
+    use types.{faas-error};
+
+    /// Một bucket KV đã mở.
+    resource bucket {
+        /// Mở bucket theo tên. Static func vì có thể thất bại
+        /// (constructor trong WIT không trả về result được ở mọi phiên bản tool).
+        open: static func(name: string) -> result<bucket, faas-error>;
+
+        /// Đọc giá trị; ok(none) nếu không có key.
+        get: func(key: string) -> result<option<list<u8>>, faas-error>;
+
+        /// Ghi giá trị, TTL tuỳ chọn (giây).
+        set: func(key: string, value: list<u8>, ttl-seconds: option<u32>) -> result<_, faas-error>;
+
+        /// Xoá key; trả về true nếu key đã tồn tại.
+        delete: func(key: string) -> result<bool, faas-error>;
+
+        /// Liệt kê key theo tiền tố.
+        list-keys: func(prefix: string) -> result<list<string>, faas-error>;
+    }
+
+    /// Ví dụ `borrow`: copy dữ liệu giữa 2 bucket mà không lấy quyền sở hữu.
+    copy-key: func(src: borrow<bucket>, dst: borrow<bucket>, key: string) -> result<_, faas-error>;
+}
+
+/// Gọi HTTP ra ngoài (host kiểm soát allowlist, timeout, quota).
+interface outbound-http {
+    use types.{request, response, faas-error, method, headers};
+
+    /// Gửi request đơn giản. Host chịu trách nhiệm kiểm tra quyền `outbound-http`.
+    fetch: func(method: method, url: string, headers: headers, body: option<list<u8>>) -> result<response, faas-error>;
+}
+
+
+// -----------------------------------------------------------------------------
+// 5. INTERFACE MÀ GUEST PHẢI CÀI ĐẶT (sẽ được EXPORT)
+// -----------------------------------------------------------------------------
+/// Điểm vào của function. Mọi function của tenant phải export interface này.
+interface handler {
+    use types.{request, response, faas-error};
+
+    /// Xử lý 1 request. Gateway gọi hàm này cho mỗi request tới.
+    handle: func(req: request) -> result<response, faas-error>;
+}
+
+/// Hook vòng đời tuỳ chọn.
+interface lifecycle {
+    /// Gọi 1 lần sau khi instantiate, trước request đầu tiên (warm-up).
+    /// Trả về err(msg) để báo khởi tạo thất bại.
+    init: func() -> result<_, string>;
+}
+
+/// Ví dụ @since: đánh dấu item được thêm từ version nào của package.
+/// Tool dùng thông tin này để kiểm tra tương thích giữa các version.
+@since(version = 0.1.0)
+interface metrics {
+    /// Tăng 1 counter tuỳ ý (host gắn label tenant).
+    increment: func(name: string, value: u64);
+}
+
+
+// -----------------------------------------------------------------------------
+// 6. WORLD — "hình dạng" đầy đủ của một component
+// -----------------------------------------------------------------------------
+//  world = danh sách
+//    import X;   -> thứ component CẦN host cung cấp (host phải cài đặt)
+//    export Y;   -> thứ component CUNG CẤP cho host (guest phải cài đặt)
+//  Một component .wasm được build "nhắm vào" đúng 1 world.
+//  Host cũng sinh binding từ world này -> 2 bên khớp hợp đồng lúc compile.
+//
+//  Có thể import/export:
+//    - interface có tên:              import logging;
+//    - interface từ package khác:     import wasi:http/outgoing-handler@0.2.0;
+//    - hàm lẻ / interface inline:     import now: func() -> u64;
+//    - kiểu dùng trong world:         use types.{permissions};
+
+/// World tối thiểu: chỉ log + handler. Dành cho function đơn giản nhất.
+world minimal-function {
+    import logging;
+    export handler;
+}
+
+/// World đầy đủ cho function của tenant.
+world function {
+    // `include` = gộp toàn bộ import/export của world khác vào đây
+    // (giống kế thừa). Ở đây kế thừa logging + handler từ minimal-function.
+    include minimal-function;
+
+    import config;
+    import kv;
+    import outbound-http;
+    import metrics;
+
+    // Import một HÀM LẺ ngay trong world (không cần tạo interface riêng).
+    /// Thời gian hiện tại (ms) theo đồng hồ host.
+    import now: func() -> u64;
+
+    // Export tuỳ chọn thêm: lifecycle hook.
+    export lifecycle;
+}
+
+/// World dùng cho test/mocking phía guest: chỉ cần handler, không import gì.
+world pure-function {
+    export handler;
+}
+
+
+// =============================================================================
+// 7. CÁCH DÙNG TRONG RUST
+// =============================================================================
+//
+// ---- 7.1 PHÍA GUEST (function của tenant) ------------------------------------
+//  Cargo.toml:
+//      [lib]
+//      crate-type = ["cdylib"]
+//      [dependencies]
+//      wit-bindgen = "0.4x"      # dùng bản mới nhất
+//
+//  src/lib.rs:
+//      wit_bindgen::generate!({
+//          path: "wit",
+//          world: "function",
+//      });
+//
+//      use exports::faas::platform::handler::Guest as Handler;
+//      use exports::faas::platform::lifecycle::Guest as Lifecycle;
+//      use faas::platform::types::{Request, Response, FaasError, LogLevel};
+//      use faas::platform::{logging, kv};
+//
+//      struct Component;
+//
+//      impl Handler for Component {
+//          fn handle(req: Request) -> Result<Response, FaasError> {
+//              logging::log(LogLevel::Info, &format!("path = {}", req.path));
+//              let bucket = kv::Bucket::open("cache")?;
+//              let hits = bucket.get("hits")?.map(|v| v.len()).unwrap_or(0);
+//              Ok(Response {
+//                  status: 200,
+//                  headers: vec![("content-type".into(), "text/plain".into())],
+//                  body: format!("hello {}, hits={hits}", req.context.tenant).into_bytes(),
+//              })
+//          }
+//      }
+//      impl Lifecycle for Component {
+//          fn init() -> Result<(), String> { Ok(()) }
+//      }
+//      export!(Component);
+//
+//  Build ra component:
+//      rustup target add wasm32-wasip2
+//      cargo build --target wasm32-wasip2 --release
+//      wasm-tools component wit target/wasm32-wasip2/release/my_fn.wasm   # xem WIT nhúng trong file
+//
+// ---- 7.2 PHÍA HOST (gateway, Wasmtime) ---------------------------------------
+//      wasmtime::component::bindgen!({
+//          path: "wit",
+//          world: "function",
+//          // ánh xạ resource WIT -> kiểu Rust của host
+//          with: { "faas:platform/kv/bucket": crate::kv::BucketImpl },
+//      });
+//
+//      // Mỗi interface import sinh ra 1 trait `Host`; host struct cài đặt:
+//      impl faas::platform::logging::Host for TenantState {
+//          fn log(&mut self, level: LogLevel, msg: String) { /* tracing::... */ }
+//      }
+//      // Resource sinh ra trait `HostBucket` (open/get/set/.../drop).
+//      // Hàm lẻ trong world (`now`) sinh vào trait `FunctionImports`.
+//
+//      // Nối vào linker, instantiate, gọi export:
+//      let mut linker = Linker::<TenantState>::new(&engine);
+//      Function::add_to_linker(&mut linker, |s| s)?;
+//      let func = Function::instantiate_async(&mut store, &component, &linker).await?;
+//      func.faas_platform_lifecycle().call_init(&mut store).await??;
+//      let resp = func.faas_platform_handler().call_handle(&mut store, &req).await?;
+//
+//  (Chữ ký chính xác của add_to_linker/instantiate khác nhau theo version
+//   wasmtime — tra docs.rs của bản đang dùng.)
+//
+// ---- 7.3 DÙNG WIT CỦA PACKAGE KHÁC (vd WASI) ---------------------------------
+//  1. Đặt WIT của nó vào wit/deps/<tên>/ (tự copy, hoặc dùng `wkg wit fetch`).
+//  2. Tham chiếu theo tên đầy đủ có version:
+//         world function {
+//             import wasi:clocks/monotonic-clock@0.2.0;
+//             export wasi:http/incoming-handler@0.2.0;
+//         }
+//
+// ---- 7.4 LƯU Ý THIẾT KẾ CHO FAAS ĐA TENANT -----------------------------------
+//  - Mọi import là "capability": guest chỉ dùng được thứ world cho phép.
+//    Muốn tenant không gọi HTTP ra ngoài -> build theo world không import
+//    outbound-http, hoặc host trả err(permission-denied) theo `permissions`.
+//  - Thay đổi WIT = thay đổi ABI. Thêm hàm/kiểu mới: tăng minor version.
+//    Đổi/xoá trường record hay case variant: phá vỡ tương thích -> tăng major.
+//  - list<u8> lớn bị copy qua ranh giới -> tốn bộ nhớ; payload lớn nên
+//    chuyển sang stream (WASI 0.3 / component-model async) hoặc resource.
+//  - Không có map/HashMap trong WIT -> dùng list<tuple<K, V>>.
+//  - Không có kiểu đệ quy (record tự chứa chính nó) -> dùng resource hoặc
+//    làm phẳng thành list + index.
+// =============================================================================
