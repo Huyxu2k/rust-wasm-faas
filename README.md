@@ -4,9 +4,11 @@
     winget install BytecodeAlliance.Wasmtime 
     (curl https://wasmtime.dev -sSf | bash)
 ```
-- ##### 2. Cài đặt cargo-component (Mở rộng của Cargo cho Wasm Component Model)
+- ##### 2. Cài đặt cargo-component, wasm-tools, wkg (Mở rộng của Cargo cho Wasm Component Model)
 ```
     cargo install cargo-component --locked
+    cargo install wasm-tools
+    cargo install wkg
 ```
 - ##### 3. Thêm mục tiêu biên dịch Wasm vào Rust toolchain của bạn
 ```

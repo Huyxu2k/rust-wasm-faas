@@ -2,7 +2,7 @@
 members = [
     "gateway",
     "tenants/service-test1"
-    ]
+    , "tenants/service-test2"]
 resolver = "2"
 
 [workspace.package]
