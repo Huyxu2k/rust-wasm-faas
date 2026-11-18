@@ -9,6 +9,8 @@
     cargo install cargo-component --locked
     cargo install wasm-tools
     cargo install wkg
+
+    wkg fetch (kéo các thư mục cần dùng vào deps của wit)
 ```
 - ##### 3. Thêm mục tiêu biên dịch Wasm vào Rust toolchain của bạn
 ```
