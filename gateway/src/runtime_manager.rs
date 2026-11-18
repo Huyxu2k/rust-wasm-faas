@@ -3,11 +3,11 @@ use std::{path::PathBuf, sync::Arc, time::{Duration, Instant}};
 use moka::{future::Cache, notification::RemovalCause};
 use tokio::sync::Semaphore;
 use wasmtime::{
-    Config, Engine, InstanceAllocationStrategy, OptLevel, PoolingAllocationConfig, ProfilingStrategy, component::{Component, Linker},
+    Config, Engine, InstanceAllocationStrategy, OptLevel, PoolingAllocationConfig, ProfilingStrategy, component::{Component, HasSelf, Linker},
 };
 use wasmtime_wasi_http::p2::bindings::ProxyPre;
 
-use crate::{EPOCH_TICK, IDLE_TIMEOUT, Result, TenantState, db::{DatabaseManager, TenantMetadata}, error::AppError};
+use crate::{EPOCH_TICK, Faas, IDLE_TIMEOUT, Result, TenantState, db::{DatabaseManager, TenantMetadata}, error::AppError};
 
 #[derive(Clone)]
 pub struct CompiledTenant {
@@ -180,8 +180,17 @@ pub fn build_engine() -> Result<Engine> {
 
 pub fn build_linker(engine: &Engine) ->  Result<Linker<TenantState>> {
     let mut linker = Linker::new(engine);
+
+    // Đăng ký custom FaaS interfaces
+    Faas::add_to_linker::<_, HasSelf<_>>(
+        &mut linker,
+        |state| state,
+    )?;
+
+    // Đăng ký WASI
     wasmtime_wasi::p3::add_to_linker(&mut linker)?;
     wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
+    // Đăng ký WASI HTTP
     wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker)?;
 
     Ok(linker)

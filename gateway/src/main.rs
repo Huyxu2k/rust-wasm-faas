@@ -90,6 +90,25 @@ impl WasiHttpView for TenantState {
     }
 }
 
+wasmtime::component::bindgen!({
+    path : "../wit/faas.wit",
+    world: "faas",
+});
+
+use crate::faas::platform::logging::{Host, Level};
+
+impl Host for  TenantState {
+    fn log(&mut self, level: Level, message: String) {
+        match level {
+            Level::Error => tracing::error!("[Guest]: {message}"),
+            Level::Warn => tracing::warn!("[Guest]: {message}"),
+            Level::Info => tracing::info!("[Guest]: {message}"),
+            Level::Debug => tracing::debug!("[Guest]: {message}"),
+        }
+    }
+    
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // 0. Khởi tạo subscriber 

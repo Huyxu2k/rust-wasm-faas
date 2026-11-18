@@ -1,0 +1,18 @@
+package faas:platform@0.1.0;
+
+interface logging {
+    enum level {
+        debug,
+        info,
+        warn,
+        error,
+    }
+    log: func(
+        level: level, 
+        message: string
+    );
+}
+
+world faas {
+    import logging;
+}

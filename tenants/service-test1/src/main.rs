@@ -1,5 +1,13 @@
 use wstd::http::{Body, Request, Response, Result, StatusCode};
 use wstd::time::Duration;
+use wit_bindgen::generate;
+
+generate!({
+    path: "../../wit/faas.wit",
+    world: "faas",
+});
+
+use crate::faas::platform::logging::{Level, log};
 
 #[wstd::http_server]
 async fn main(req: Request<Body>) -> Result<Response<Body>> {
@@ -8,13 +16,14 @@ async fn main(req: Request<Body>) -> Result<Response<Body>> {
     match path.as_str() {
         "/" => text(StatusCode::OK,"Hello từ Wasm service test 1!\n"),
         "/timeout" => {
+            log(Level::Info, "Đang chờ 10 giây...");
             wstd::task::sleep(Duration::from_secs(10)).await;
             text(StatusCode::OK, "Đã sleep 10 giây (mặc định)!\n")
         },
         p if p.starts_with("/timeout/") => {
             let seconds_str = &p["/timeout/".len()..];
             let seconds = seconds_str.parse::<u64>().unwrap_or(10);
-            
+            log(Level::Info, &format!("Đang chờ {} giây...", seconds).to_string());
             wstd::task::sleep(Duration::from_secs(seconds)).await;
             text(StatusCode::OK, format!("Đã sleep {} giây!\n", seconds))
         }

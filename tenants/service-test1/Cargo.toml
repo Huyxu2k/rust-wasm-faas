@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 wstd = "0.6.8"
+wit-bindgen = "0.63.0"
