@@ -3,3 +3,4 @@
 */storage
 Cargo.lock
 *.db
+*/deps
