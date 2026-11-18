@@ -3,9 +3,8 @@ name = "service-test2"
 version = "0.1.0"
 edition = "2024"
 
-[package.metadata.component]
-package = "component:service-test2"
-
-[package.metadata.component.dependencies]
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
+wit-bindgen = "0.63.0"
