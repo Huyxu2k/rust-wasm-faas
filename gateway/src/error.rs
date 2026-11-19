@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("Error sqlite: {0}")]
     SqliteError(#[from] rusqlite::Error),
 
+    #[error("Không có quyền truy cập database '{0}'")]
+    AccessDenied(String),
+
     /// Error Service
     #[error("BadRequest: {0}")]
     BadRequest(&'static str),

@@ -8,6 +8,8 @@ mod uploader;
 use std::time::Duration;
 use std::{env, path::PathBuf};
 
+use rusqlite::{Connection, params_from_iter, types::Value as SqlValue};
+use wasmtime::component::{Resource, bindgen};
 use wasmtime::{StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
@@ -34,7 +36,7 @@ const MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
 /// Thời gian đợi giải phóng comile khỏi ram
 const IDLE_TIMEOUT: u64 = 5 * 60;
 
-pub type Result<T> = std::result::Result<T, AppError>;
+pub type Result<T, E = AppError> = std::result::Result<T, E>;
 
 /// Trạng thái chung
 #[derive(Clone)]
@@ -55,7 +57,8 @@ pub struct TenantState {
     wasi_ctx: WasiCtx,
     http: WasiHttpCtx,
     table: ResourceTable,
-    limits: StoreLimits
+    limits: StoreLimits,
+    meta: TenantMetadata
 }
 
 impl TenantState {
@@ -66,7 +69,8 @@ impl TenantState {
             table: ResourceTable::new(), 
             limits: StoreLimitsBuilder::new()
                     .memory_size(DEFAULT_MEMORY_LIMIT)
-                    .build() 
+                    .build(),
+            meta: meta.clone()
         }
     }
 }
@@ -90,23 +94,100 @@ impl WasiHttpView for TenantState {
     }
 }
 
-wasmtime::component::bindgen!({
+bindgen!({
     path : "../wit/faas.wit",
     world: "faas",
+    with : {
+         "faas:platform/sqlite.connection": DbConn,
+    },
 });
 
-use crate::faas::platform::logging::{Host, Level};
+pub struct DbConn {
+    conn: Connection
+}
 
-impl Host for  TenantState {
+pub fn convert_value(value: SqlValue) -> faas::platform::sqlite::Value {
+    use faas::platform::sqlite::Value;
+    match value {
+        SqlValue::Null => Value::Null,
+        SqlValue::Integer(v) => Value::Integer(v),
+        SqlValue::Real(v) => Value::Real(v),
+        SqlValue::Text(v) => Value::Text(v),
+        SqlValue::Blob(v) => Value::Blob(v),
+    }
+}
+
+
+use faas::platform::logging::{Host as LogHost, Level};
+use faas::platform::sqlite::{Host as SqliteHost, HostConnection, Row};
+
+impl LogHost for  TenantState {
     fn log(&mut self, level: Level, message: String) {
         match level {
-            Level::Error => tracing::error!("[Guest]: {message}"),
-            Level::Warn => tracing::warn!("[Guest]: {message}"),
-            Level::Info => tracing::info!("[Guest]: {message}"),
-            Level::Debug => tracing::debug!("[Guest]: {message}"),
+            Level::Error => tracing::error!("[Guest]-[{0}]: {1}", self.meta.tenant_id, message),
+            Level::Warn => tracing::warn!("[Guest]-[{0}]: {1}", self.meta.tenant_id, message),
+            Level::Info => tracing::info!("[Guest]-[{0}]: {1}", self.meta.tenant_id, message),
+            Level::Debug => tracing::debug!("[Guest]-[{0}]: {1}", self.meta.tenant_id, message),
         }
     }
     
+}
+
+impl SqliteHost for TenantState {
+    fn open(&mut self,) -> Result<Resource<DbConn>, String> {
+        let db_path = self.meta.data_dir.clone();
+        let conn = Connection::open(db_path).map_err(|e| e.to_string());
+        match conn {
+            Ok(conn) => {
+                self.table.push(DbConn {conn}).map_err(|e| e.to_string())
+            },
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl HostConnection for TenantState {
+    fn execute(&mut self, self_: Resource<DbConn>, sql: String, params: Vec<String>) -> Result<u64, String> {
+        let db = self.table.get(&self_).map_err(|e|e.to_string())?;
+        let count = db
+                    .conn
+                    .execute(&sql, params_from_iter(params))
+                    .map_err(|e| e.to_string())?;
+        Ok(count as u64)
+    }
+
+    fn query(&mut self, self_: Resource<DbConn>, sql: String, params: Vec<String>) -> Result<Vec<Row>, String> {
+        use faas::platform::sqlite::Value;
+        let db = self.table.get(&self_).map_err(|e| e.to_string())?;
+        let mut stmt = db.conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let col_count = stmt.column_count();
+
+        let rows = stmt
+                .query_map(params_from_iter(params), |row| {
+                    let mut vals = Vec::with_capacity(col_count);
+                    for i in 0..col_count {
+                        let val = match row.get::<_, SqlValue>(i)? {
+                                SqlValue::Null => Value::Null,
+                                SqlValue::Integer(v) => Value::Integer(v),
+                                SqlValue::Real(v) => Value::Real(v),
+                                SqlValue::Text(v) => Value::Text(v),
+                                SqlValue::Blob(v) => Value::Blob(v),
+                        };
+                        vals.push(val);
+                    }
+                    Ok(vals)
+                })
+                .map_err(|e| e.to_string())?;
+        
+        rows.collect::<std::result::Result<Vec<Row>, rusqlite::Error>>()
+            .map_err(|e| e.to_string())
+
+    }
+
+    fn drop(&mut self, rep: Resource<DbConn>) -> wasmtime::Result<()> {
+        self.table.delete(rep)?;
+        Ok(())
+    }
 }
 
 #[tokio::main]

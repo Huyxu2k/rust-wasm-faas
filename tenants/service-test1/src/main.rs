@@ -1,4 +1,4 @@
-use wstd::http::{Body, Request, Response, Result, StatusCode};
+use wstd::http::{Body, Error, Request, Response, Result, StatusCode};
 use wstd::time::Duration;
 use wit_bindgen::generate;
 
@@ -7,11 +7,26 @@ generate!({
     world: "faas",
 });
 
-use crate::faas::platform::logging::{Level, log};
+use faas::platform::logging::{Level, log};
+
+use faas::platform::sqlite;
+use faas::platform::sqlite::Connection;
 
 #[wstd::http_server]
 async fn main(req: Request<Body>) -> Result<Response<Body>> {
     let path = req.uri().path().to_owned();
+    let conn = match sqlite::open() {
+        Ok(conn) => conn,
+        Err(e) => {
+            log(Level::Error, &e);
+            return text(StatusCode::INTERNAL_SERVER_ERROR, "Database unavailable\n");
+        }
+    };
+
+    match init(conn) {
+        Ok(v) => log(Level::Info, &v.to_string()),
+        Err(e) => log(Level::Error, &e),
+    }
 
     match path.as_str() {
         "/" => text(StatusCode::OK,"Hello từ Wasm service test 1!\n"),
@@ -40,4 +55,9 @@ fn text(status: StatusCode, body: impl Into<String>) -> Result<Response<Body>> {
         .status(status)
         .header("content-type", "text/plain; charset=utf-8")
         .body(body.into().into())?)
+}
+
+fn init(conn: Connection) -> std::result::Result<u64, String> {
+    // tạo bảng test
+    conn.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)", &[])
 }

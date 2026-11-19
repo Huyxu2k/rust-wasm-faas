@@ -13,6 +13,31 @@ interface logging {
     );
 }
 
+interface sqlite {
+    variant value {
+        null,
+        integer(s64),
+        real(f64),
+        text(string),
+        blob(list<u8>)
+    }
+
+    /// dữ liệu cho 1 dòng kết quả
+    type row = list<value>;
+    resource connection {
+        execute: func(sql: string, params: list<string>) -> result<u64, string>;
+
+        query: func(sql: string, params: list<string>) -> result<list<row>, string>;
+    }
+
+    open: func() -> result<connection, string>;
+}
+
 world faas {
     import logging;
+    import sqlite;
+
+    // Hàm dùng để khởi tạo dữ liệu cho Guest
+    //export migrate: func() -> result<_, string>;
+    //export run-task: func() -> result<string, string>;
 }
