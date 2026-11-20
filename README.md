@@ -15,6 +15,7 @@
 - ##### 3. Thêm mục tiêu biên dịch Wasm vào Rust toolchain của bạn
 ```
     rustup target add wasm32-wasip2
+    //rustup target add wasm32-wasip3 (use for wasi 0.3 preview, only support for nightly)
     cargo install wasmtime-cli 
 ```
 - ##### 4. Build & Run test tenant service

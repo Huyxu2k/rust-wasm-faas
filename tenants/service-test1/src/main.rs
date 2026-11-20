@@ -1,4 +1,4 @@
-use wstd::http::{Body, Error, Request, Response, Result, StatusCode};
+use wstd::http::{Body, Request, Response, Result, StatusCode};
 use wstd::time::Duration;
 use wit_bindgen::generate;
 
