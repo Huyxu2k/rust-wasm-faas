@@ -35,6 +35,8 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
 /// Thời gian đợi giải phóng comile khỏi ram
 const IDLE_TIMEOUT: u64 = 5 * 60;
+/// Số lương cặp giá trị key-value được lưu trong cache
+const MAX_CAPACITY: u64 = 100; 
 
 pub type Result<T, E = AppError> = std::result::Result<T, E>;
 

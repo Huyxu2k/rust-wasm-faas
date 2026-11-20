@@ -7,7 +7,7 @@ use wasmtime::{
 };
 use wasmtime_wasi_http::p2::bindings::ProxyPre;
 
-use crate::{EPOCH_TICK, Faas, IDLE_TIMEOUT, Result, TenantState, db::{DatabaseManager, TenantMetadata}, error::AppError};
+use crate::{EPOCH_TICK, Faas, IDLE_TIMEOUT, MAX_CAPACITY, Result, TenantState, db::{DatabaseManager, TenantMetadata}, error::AppError};
 
 #[derive(Clone)]
 pub struct CompiledTenant {
@@ -32,7 +32,7 @@ impl TenantRuntime {
         let engine = build_engine()?;
         let linker = Arc::new(build_linker(&engine)?);
         let compiled= Cache::builder()
-                    .max_capacity(500)
+                    .max_capacity(MAX_CAPACITY)
                     .time_to_idle(Duration::from_secs(IDLE_TIMEOUT))
                     .eviction_listener(|tenant_id: Arc<String>, v: CompiledTenant, cause: RemovalCause|{
                         let mb = v.compiled_bytes as f64 / 1024.0 / 1024.0;

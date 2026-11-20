@@ -1,4 +1,4 @@
-use wstd::http::{Body, Request, Response, Result, StatusCode};
+use wstd::http::{Body, Method, Request, Response, Result, StatusCode};
 use wstd::time::Duration;
 use wit_bindgen::generate;
 
@@ -14,7 +14,9 @@ use faas::platform::sqlite::Connection;
 
 #[wstd::http_server]
 async fn main(req: Request<Body>) -> Result<Response<Body>> {
-    let path = req.uri().path().to_owned();
+    let method = req.method().clone();
+    let path = req.uri().path();
+    let param = req.body();
     let conn = match sqlite::open() {
         Ok(conn) => conn,
         Err(e) => {
@@ -28,23 +30,26 @@ async fn main(req: Request<Body>) -> Result<Response<Body>> {
         Err(e) => log(Level::Error, &e),
     }
 
-    match path.as_str() {
-        "/" => text(StatusCode::OK,"Hello từ Wasm service test 1!\n"),
-        "/timeout" => {
+    match (method, path) {
+        (Method::GET, "/") => text(StatusCode::OK,"Hello từ Wasm service test 1!\n"),
+        (Method::GET, "/timeout") => {
             log(Level::Info, "Đang chờ 10 giây...");
             wstd::task::sleep(Duration::from_secs(10)).await;
             text(StatusCode::OK, "Đã sleep 10 giây (mặc định)!\n")
         },
-        p if p.starts_with("/timeout/") => {
+        (Method::GET,p )if p.starts_with("/timeout/") => {
             let seconds_str = &p["/timeout/".len()..];
             let seconds = seconds_str.parse::<u64>().unwrap_or(10);
             log(Level::Info, &format!("Đang chờ {} giây...", seconds).to_string());
             wstd::task::sleep(Duration::from_secs(seconds)).await;
             text(StatusCode::OK, format!("Đã sleep {} giây!\n", seconds))
         }
-        p if p.starts_with("/hello/") => {
+        (Method::GET,p ) if p.starts_with("/hello/") => {
             let name = &p["/hello/".len()..];
             text(StatusCode::OK, format!("Xin chào: {}!\n", name))
+        }
+        (Method::POST,  "/insert") => {
+            text(StatusCode::OK, "Thành công")
         }
         _ => text(StatusCode::NOT_FOUND, "Không tìm thấy\n")
     }
